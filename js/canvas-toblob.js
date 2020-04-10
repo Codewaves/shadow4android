@@ -13,6 +13,7 @@
 
 /*! @source http://purl.eligrey.com/github/canvas-toBlob.js/blob/master/canvas-toBlob.js */
 
+
 (function(view) {
 	"use strict";
 	var
