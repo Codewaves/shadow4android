@@ -18,9 +18,12 @@ var paddingTop=0;
 var paddingBottom=0;
 
 var CANVAS_MIN_WIDTH = 10, CANVAS_MIN_HEIGHT = 10;
-var CANVAS_MAX_WIDTH = 500, CANVAS_MAX_HEIGHT = 500;
+var CANVAS_MAX_WIDTH = 1000, CANVAS_MAX_HEIGHT = 1000;
 var CONTENT_AREA_COLOR = "rgba(53, 67, 172, 0.6)";
 var NINEPATCH_SIZING_WIDTH = 4;
+
+var scales = [1.0, 1.5, 2.0, 3.0, 4.0]
+var dpi_names = ["drawable-mdpi", "drawable-hdpi", "drawable-xhdpi", "drawable-xxhdpi", "drawable-xxxhdpi"]
 
 CanvasRenderingContext2D.prototype.roundRect = function (x, y, width, height, radius) {
     var cornerRadius = {upperLeft: 0, upperRight: 0, lowerLeft: 0, lowerRight: 0};
@@ -66,28 +69,70 @@ function exportAsPng() {
                     showContentAreaTmp = showContentArea;
                     showContentArea = false;
                     hideNinepatches = false;
-                    redraw();
                 }
 
-                //Use BlobHD If supported
-                if (canvas.toBlobHD) {
-                    canvas.toBlobHD(function (blob) {
-                        saveAs(blob, result + ".9.png");
-                    });
-                } else {
-                    canvas.toBlob(function (blob) {
-                        saveAs(blob, result + ".9.png");
-                    });
-                }
+                var widthTmp = objectWidth
+                var heightTmp = objectHeight
+                
+                var scaleIndex = 0 
+                zip.createWriter(new zip.BlobWriter("application/zip"), function(writer) {
+
+                    function finish() {
+                        writer.close(function(blob) { 
+                            saveAs(blob, result + ".zip");
+                        });
+
+                        if (hideNinepatchesTmp || showContentAreaTmp) {
+                            hideNinepatches = hideNinepatchesTmp;
+                            showContentArea = showContentAreaTmp;
+                        }
+                        objectWidth = widthTmp
+                        objectHeight = heightTmp
+                        redraw();
+                    }
+
+                    function next() {
+                        saveCanvasToZip(writer, widthTmp, heightTmp, scales[scaleIndex], dpi_names[scaleIndex] + "/" + result + ".9.png", function() {
+                            if (++scaleIndex < scales.length) {
+                                next();
+                            } else {
+                                finish();
+                            }
+                        });
+                    }
+
+                    next();
+
+                }, function(error) { 
+
+                })
 
                 if (hideNinepatchesTmp || showContentAreaTmp) {
                     hideNinepatches = hideNinepatchesTmp;
                     showContentArea = showContentAreaTmp;
-                    redraw();
                 }
+                objectWidth = widthTmp
+                objectHeight = heightTmp
+                redraw();
             }
         }
     });
+}
+
+function saveCanvasToZip(writer, width, height, scale, name, callback) {
+    objectWidth = width * scale
+    objectHeight = height * scale
+    redraw(false, scale);
+
+    if (canvas.toBlobHD) {
+        canvas.toBlobHD(function (blob) {
+            writer.add(name, new zip.BlobReader(blob), callback);
+        });
+    } else {
+        canvas.toBlob(function (blob) {
+            writer.add(name, new zip.BlobReader(blob), callback);
+        });
+    }
 }
 
 function predraw(w, h, radius) {
@@ -268,8 +313,8 @@ function updateBounds(w, h) {
 
     boundPos.leftPos = boundPos.leftPos - 1;
     boundPos.topPos = boundPos.topPos - 1;
-    boundPos.rightPos = imageWidth - boundPos.rightPos - 2;
-    boundPos.bottomPos = imageHeight - boundPos.bottomPos - 2;
+    boundPos.rightPos = imageWidth - boundPos.rightPos - 1;
+    boundPos.bottomPos = imageHeight - boundPos.bottomPos - 1;
 
     //Calculate final canvas width and height
     boundPos.canvasWidth = Math.round(canvas.width - (boundPos.leftPos + boundPos.rightPos));
@@ -369,7 +414,7 @@ function drawNinepatchLines(w, h, paddingValues) {
     ctx.clearRect(0, height - ninepatchLineWidth, ninepatchLineWidth, ninepatchLineWidth);
 }
 
-function redraw(fast) {
+function redraw(fast, scale = 1.0) {
     //Limit ranges for input
     var minRadius = 0, maxRadius = 500;
     var minOffset = -500, maxOffset = 500;
@@ -380,10 +425,10 @@ function redraw(fast) {
     var outlineFill = $("#color-picker-outline-input");
     var colorShadow = $("#color-picker-shadow-input");
 
-    shadowBlur = parseFloatAndClamp($("#shadow-blur").val(), minBlur, maxBlur);
-    shadowOffsetX = parseFloatAndClamp($("#shadow-offset-x").val(), minOffset, maxOffset, 0);
-    shadowOffsetY = parseFloatAndClamp($("#shadow-offset-y").val(), minOffset, maxOffset, 0);
-    outlineWidth = parseFloatAndClamp($("#outline-width-input").val(), minOutlineW, maxOutlineW);
+    shadowBlur = parseFloatAndClamp($("#shadow-blur").val(), minBlur, maxBlur, minBlur, scale);
+    shadowOffsetX = parseFloatAndClamp($("#shadow-offset-x").val(), minOffset, maxOffset, 0, scale);
+    shadowOffsetY = parseFloatAndClamp($("#shadow-offset-y").val(), minOffset, maxOffset, 0, scale);
+    outlineWidth = parseFloatAndClamp($("#outline-width-input").val(), minOutlineW, maxOutlineW, scale);
     isTransparentFill = colorFill.prop("disabled");
 
     shadowColor = colorShadow.val();
@@ -391,26 +436,26 @@ function redraw(fast) {
     outlineColor = outlineFill.val();
 
     roundRadius = {
-        upperLeft: parseFloatAndClamp($("#shadow-round-tl").val(), minRadius, maxRadius),
-        upperRight: parseFloatAndClamp($("#shadow-round-tr").val(), minRadius, maxRadius),
-        lowerLeft: parseFloatAndClamp($("#shadow-round-bl").val(), minRadius, maxRadius),
-        lowerRight: parseFloatAndClamp($("#shadow-round-br").val(), minRadius, maxRadius)
+        upperLeft: parseFloatAndClamp($("#shadow-round-tl").val(), minRadius, maxRadius, minRadius, scale),
+        upperRight: parseFloatAndClamp($("#shadow-round-tr").val(), minRadius, maxRadius, minRadius, scale),
+        lowerLeft: parseFloatAndClamp($("#shadow-round-bl").val(), minRadius, maxRadius, minRadius, scale),
+        lowerRight: parseFloatAndClamp($("#shadow-round-br").val(), minRadius, maxRadius, minRadius, scale)
     };
 
-    paddingTop = parseFloatAndClamp($('#padding-top-line').val(), 0, CANVAS_MAX_WIDTH, 0);
-    paddingBottom = parseFloatAndClamp($('#padding-bottom-line').val(), 0, CANVAS_MAX_WIDTH, 0);
-    paddingLeft = parseFloatAndClamp($('#padding-left-line').val(), 0, CANVAS_MAX_WIDTH, 0);
-    paddingRight = parseFloatAndClamp($('#padding-right-line').val(), 0, CANVAS_MAX_WIDTH, 0);
+    paddingTop = parseFloatAndClamp($('#padding-top-line').val(), 0, CANVAS_MAX_WIDTH, 0, scale);
+    paddingBottom = parseFloatAndClamp($('#padding-bottom-line').val(), 0, CANVAS_MAX_WIDTH, 0, scale);
+    paddingLeft = parseFloatAndClamp($('#padding-left-line').val(), 0, CANVAS_MAX_WIDTH, 0, scale);
+    paddingRight = parseFloatAndClamp($('#padding-right-line').val(), 0, CANVAS_MAX_WIDTH, 0, scale);
 
     drawShadow(objectWidth, objectHeight, roundRadius, fast);
 }
 
-function parseFloatAndClamp(val, min, max, noneValue) {
+function parseFloatAndClamp(val, min, max, noneValue, scale = 1.0) {
     var num = parseFloat(val);
     if (isNaN(num)) {
-        return (typeof noneValue !== "undefined") ? noneValue : min;
+        return ((typeof noneValue !== "undefined") ? noneValue : min) * scale;
     } else {
-        return Math.min(Math.max(min, val), max);
+        return Math.min(Math.max(min, val), max) * scale;
     }
 }
 
